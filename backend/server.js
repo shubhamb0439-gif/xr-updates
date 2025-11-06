@@ -12,8 +12,11 @@ const { createAdapter } = require('@socket.io/redis-adapter');
 const axios = require('axios'); // for SOAP note generation
 const sql = require('mssql');   // MSSQL driver
 const { Sequelize } = require('sequelize');
+const bcrypt = require('bcryptjs');
+const session = require('express-session');
 
 const { sequelize, connectToDatabase, closeDatabase } = require('./database/database-config');
+const { getAzureSqlConnection } = require('./database/azure-db-helper');
 
 
 const dotenv = require('dotenv');
@@ -112,6 +115,22 @@ console.log('[SOCKET.IO] Socket.IO server initialized');
 app.use(cors());
 app.use(express.json());
 console.log('[MIDDLEWARE] CORS + JSON enabled');
+
+// Session middleware for platform admin
+const sessionSecret = process.env.SESSION_SECRET || 'change-me-in-production';
+app.use(
+  session({
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  })
+);
+console.log('[MIDDLEWARE] Session enabled');
 
 // ✅ Connect to Azure SQL via Sequelize on boot (non-fatal if it fails)
 (async () => {
@@ -244,6 +263,7 @@ app.get(['/device', '/device/'], sendView('device.html'));
 app.get(['/dashboard', '/dashboard/'], sendView('dashboard.html'));
 app.get(['/scribe-cockpit', '/scribe-cockpit/'], sendView('scribe-cockpit.html'));
 app.get(['/operator', '/operator/'], sendView('operator.html'));
+app.get(['/platform', '/platform/'], sendView('platform.html'));
 app.get('/', sendView('index.html'));
 
 
@@ -620,6 +640,90 @@ app.post('/api/medications/availability', async (req, res) => {
   }
 });
 
+
+// -------------------- Platform Admin Routes --------------------
+
+function requireSuperAdmin(req, res, next) {
+  if (req.session && req.session.user && req.session.user.role === 'superadmin') {
+    return next();
+  }
+  return res.status(401).json({ ok: false, message: 'Unauthorized' });
+}
+
+app.post('/api/platform/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, message: 'Email and password required' });
+    }
+
+    const superAdminEmail = process.env.SUPERADMIN_EMAIL;
+    const superAdminPasswordBcrypt = process.env.SUPERADMIN_PASSWORD_BCRYPT;
+
+    if (!superAdminEmail || !superAdminPasswordBcrypt) {
+      console.error('[PLATFORM] Missing SUPERADMIN_EMAIL or SUPERADMIN_PASSWORD_BCRYPT in environment');
+      return res.status(500).json({ ok: false, message: 'Server configuration error' });
+    }
+
+    if (email.toLowerCase() !== superAdminEmail.toLowerCase()) {
+      return res.status(401).json({ ok: false, message: 'Invalid credentials' });
+    }
+
+    const isValid = await bcrypt.compare(password, superAdminPasswordBcrypt);
+    if (!isValid) {
+      return res.status(401).json({ ok: false, message: 'Invalid credentials' });
+    }
+
+    req.session.user = {
+      role: 'superadmin',
+      email: email,
+    };
+
+    console.log('[PLATFORM] Super admin logged in:', email);
+    return res.json({ ok: true, role: 'superadmin', email });
+  } catch (err) {
+    console.error('[PLATFORM] Login error:', err);
+    return res.status(500).json({ ok: false, message: 'Internal server error' });
+  }
+});
+
+app.get('/api/platform/me', (req, res) => {
+  if (req.session && req.session.user && req.session.user.role === 'superadmin') {
+    return res.json({
+      ok: true,
+      role: req.session.user.role,
+      email: req.session.user.email,
+    });
+  }
+  return res.json({ ok: false });
+});
+
+app.post('/api/platform/logout', (req, res) => {
+  if (req.session) {
+    req.session.destroy((err) => {
+      if (err) {
+        console.error('[PLATFORM] Logout error:', err);
+        return res.status(500).json({ ok: false, message: 'Logout failed' });
+      }
+      return res.json({ ok: true });
+    });
+  } else {
+    return res.json({ ok: true });
+  }
+});
+
+app.get('/platform/secure/ping', requireSuperAdmin, (req, res) => {
+  const conn = getAzureSqlConnection();
+  const dbStatus = conn ? 'configured' : 'mock_mode';
+  return res.json({
+    ok: true,
+    message: 'Authorized',
+    user: req.session.user,
+    database: dbStatus,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // ---- Desktop HTTP telemetry (beginner path) ----
 app.post('/desktop-telemetry', (req, res) => {
