@@ -1,6 +1,13 @@
 // --------------------------------27-5:12----//////-------------Server.js ----------------duplicate id working version ----29-08-25------------------------------------
 
-// // -------------------- Imports & Env --------------------
+// ========================================
+// CRITICAL: Load environment variables FIRST
+// ========================================
+// This MUST be the first require() to ensure
+// all env vars are available before any other module
+const envLoader = require('./config/env-loader');
+
+// -------------------- Imports & Env --------------------
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -18,36 +25,7 @@ const session = require('express-session');
 const { sequelize, connectToDatabase, closeDatabase } = require('./database/database-config');
 const { getAzureSqlConnection } = require('./database/azure-db-helper');
 
-
-const dotenv = require('dotenv');
-const envCandidates = [
-  path.resolve(__dirname, '.env'),
-  path.resolve(__dirname, '..', '.env'),
-];
-let loadedFrom = null;
-for (const p of envCandidates) {
-  if (fs.existsSync(p)) {
-    dotenv.config({ path: p });
-    loadedFrom = p;
-    break;
-  }
-}
-console.log('[ENV] .env loaded from:', loadedFrom || 'process.env only');
 console.log('[BOOT] Instance:', process.env.WEBSITE_INSTANCE_ID || process.pid);
-
-// -------------------- Platform Config Validation --------------------
-const platformEnvCheck = {
-  SESSION_SECRET: !!process.env.SESSION_SECRET,
-  SUPERADMIN_EMAIL: !!process.env.SUPERADMIN_EMAIL,
-  SUPERADMIN_PASSWORD_BCRYPT: !!process.env.SUPERADMIN_PASSWORD_BCRYPT,
-};
-const missingPlatformKeys = Object.keys(platformEnvCheck).filter(k => !platformEnvCheck[k]);
-if (missingPlatformKeys.length > 0) {
-  console.warn('[PLATFORM] Missing environment variables:', missingPlatformKeys.join(', '));
-  console.warn('[PLATFORM] Super Admin login will not work until these are configured in .env');
-} else {
-  console.log('[PLATFORM] Super Admin credentials configured');
-}
 
 // -------------------- Debug helpers --------------------
 const DEBUG_LOGS = (process.env.DEBUG_LOGS || 'true').toLowerCase() === 'true';
@@ -673,21 +651,23 @@ app.post('/api/platform/login', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Email and password required' });
     }
 
-    const superAdminEmail = process.env.SUPERADMIN_EMAIL;
-    const superAdminPasswordBcrypt = process.env.SUPERADMIN_PASSWORD_BCRYPT;
+    // Check if environment is properly configured
+    if (!envLoader.isReady) {
+      const missing = Object.entries(envLoader.envStatus)
+        .filter(([key, exists]) => !exists && ['SESSION_SECRET', 'SUPERADMIN_EMAIL', 'SUPERADMIN_PASSWORD_BCRYPT'].includes(key))
+        .map(([key]) => key);
 
-    if (!superAdminEmail || !superAdminPasswordBcrypt) {
-      console.error('[PLATFORM] Missing SUPERADMIN_EMAIL or SUPERADMIN_PASSWORD_BCRYPT in environment');
+      console.error('[PLATFORM] Configuration error - missing:', missing.join(', '));
       const isDev = process.env.NODE_ENV !== 'production';
       return res.status(500).json({
         ok: false,
         message: 'Server configuration error',
-        ...(isDev && { missing: [
-          !superAdminEmail && 'SUPERADMIN_EMAIL',
-          !superAdminPasswordBcrypt && 'SUPERADMIN_PASSWORD_BCRYPT'
-        ].filter(Boolean) })
+        ...(isDev && { missing })
       });
     }
+
+    const superAdminEmail = process.env.SUPERADMIN_EMAIL.trim();
+    const superAdminPasswordBcrypt = process.env.SUPERADMIN_PASSWORD_BCRYPT.trim();
 
     const emailTrimmed = email.trim();
     if (emailTrimmed.toLowerCase() !== superAdminEmail.toLowerCase()) {
@@ -704,7 +684,7 @@ app.post('/api/platform/login', async (req, res) => {
       email: emailTrimmed,
     };
 
-    console.log('[PLATFORM] Super admin logged in:', emailTrimmed);
+    console.log('[PLATFORM] ✅ Super admin logged in:', emailTrimmed);
     return res.json({ ok: true, role: 'superadmin', email: emailTrimmed });
   } catch (err) {
     console.error('[PLATFORM] Login error:', err);
@@ -751,14 +731,9 @@ app.get('/platform/secure/ping', requireSuperAdmin, (req, res) => {
 
 app.get('/api/platform/config-status', (req, res) => {
   return res.json({
-    env: {
-      SESSION_SECRET: !!process.env.SESSION_SECRET,
-      SUPERADMIN_EMAIL: !!process.env.SUPERADMIN_EMAIL,
-      SUPERADMIN_PASSWORD_BCRYPT: !!process.env.SUPERADMIN_PASSWORD_BCRYPT,
-      DB_SERVER: !!process.env.DB_SERVER,
-      DB_NAME: !!process.env.DB_NAME,
-    },
-    ready: !!(process.env.SESSION_SECRET && process.env.SUPERADMIN_EMAIL && process.env.SUPERADMIN_PASSWORD_BCRYPT),
+    env: envLoader.envStatus,
+    ready: envLoader.isReady,
+    loadedFrom: envLoader.loadedFrom || 'process.env only',
   });
 });
 
