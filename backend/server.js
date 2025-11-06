@@ -34,6 +34,21 @@ for (const p of envCandidates) {
 }
 console.log('[ENV] .env loaded from:', loadedFrom || 'process.env only');
 console.log('[BOOT] Instance:', process.env.WEBSITE_INSTANCE_ID || process.pid);
+
+// -------------------- Platform Config Validation --------------------
+const platformEnvCheck = {
+  SESSION_SECRET: !!process.env.SESSION_SECRET,
+  SUPERADMIN_EMAIL: !!process.env.SUPERADMIN_EMAIL,
+  SUPERADMIN_PASSWORD_BCRYPT: !!process.env.SUPERADMIN_PASSWORD_BCRYPT,
+};
+const missingPlatformKeys = Object.keys(platformEnvCheck).filter(k => !platformEnvCheck[k]);
+if (missingPlatformKeys.length > 0) {
+  console.warn('[PLATFORM] Missing environment variables:', missingPlatformKeys.join(', '));
+  console.warn('[PLATFORM] Super Admin login will not work until these are configured in .env');
+} else {
+  console.log('[PLATFORM] Super Admin credentials configured');
+}
+
 // -------------------- Debug helpers --------------------
 const DEBUG_LOGS = (process.env.DEBUG_LOGS || 'true').toLowerCase() === 'true';
 function dlog(...args) {
@@ -663,10 +678,19 @@ app.post('/api/platform/login', async (req, res) => {
 
     if (!superAdminEmail || !superAdminPasswordBcrypt) {
       console.error('[PLATFORM] Missing SUPERADMIN_EMAIL or SUPERADMIN_PASSWORD_BCRYPT in environment');
-      return res.status(500).json({ ok: false, message: 'Server configuration error' });
+      const isDev = process.env.NODE_ENV !== 'production';
+      return res.status(500).json({
+        ok: false,
+        message: 'Server configuration error',
+        ...(isDev && { missing: [
+          !superAdminEmail && 'SUPERADMIN_EMAIL',
+          !superAdminPasswordBcrypt && 'SUPERADMIN_PASSWORD_BCRYPT'
+        ].filter(Boolean) })
+      });
     }
 
-    if (email.toLowerCase() !== superAdminEmail.toLowerCase()) {
+    const emailTrimmed = email.trim();
+    if (emailTrimmed.toLowerCase() !== superAdminEmail.toLowerCase()) {
       return res.status(401).json({ ok: false, message: 'Invalid credentials' });
     }
 
@@ -677,11 +701,11 @@ app.post('/api/platform/login', async (req, res) => {
 
     req.session.user = {
       role: 'superadmin',
-      email: email,
+      email: emailTrimmed,
     };
 
-    console.log('[PLATFORM] Super admin logged in:', email);
-    return res.json({ ok: true, role: 'superadmin', email });
+    console.log('[PLATFORM] Super admin logged in:', emailTrimmed);
+    return res.json({ ok: true, role: 'superadmin', email: emailTrimmed });
   } catch (err) {
     console.error('[PLATFORM] Login error:', err);
     return res.status(500).json({ ok: false, message: 'Internal server error' });
@@ -722,6 +746,19 @@ app.get('/platform/secure/ping', requireSuperAdmin, (req, res) => {
     user: req.session.user,
     database: dbStatus,
     timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api/platform/config-status', (req, res) => {
+  return res.json({
+    env: {
+      SESSION_SECRET: !!process.env.SESSION_SECRET,
+      SUPERADMIN_EMAIL: !!process.env.SUPERADMIN_EMAIL,
+      SUPERADMIN_PASSWORD_BCRYPT: !!process.env.SUPERADMIN_PASSWORD_BCRYPT,
+      DB_SERVER: !!process.env.DB_SERVER,
+      DB_NAME: !!process.env.DB_NAME,
+    },
+    ready: !!(process.env.SESSION_SECRET && process.env.SUPERADMIN_EMAIL && process.env.SUPERADMIN_PASSWORD_BCRYPT),
   });
 });
 
