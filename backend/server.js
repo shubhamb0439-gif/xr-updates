@@ -737,6 +737,228 @@ app.get('/api/platform/config-status', (req, res) => {
   });
 });
 
+app.get('/api/platform/stats', requireSuperAdmin, async (req, res) => {
+  try {
+    const stats = {
+      totalUsers: 0,
+      totalProviders: 0,
+      totalScribes: 0,
+      totalEmployees: 0,
+      recentLogins: [],
+    };
+
+    try {
+      const userCountQuery = 'SELECT COUNT(*) as count FROM [dbo].[users]';
+      const userCountResult = await sequelize.query(userCountQuery, {
+        type: Sequelize.QueryTypes.SELECT,
+      });
+      stats.totalUsers = userCountResult[0]?.count || 0;
+
+      const providerCountQuery = 'SELECT COUNT(*) as count FROM [dbo].[users] u INNER JOIN [dbo].[typeuser] t ON u.typeuser_id = t.id WHERE t.description = \'Provider\'';
+      const providerCountResult = await sequelize.query(providerCountQuery, {
+        type: Sequelize.QueryTypes.SELECT,
+      });
+      stats.totalProviders = providerCountResult[0]?.count || 0;
+
+      const scribeCountQuery = 'SELECT COUNT(*) as count FROM [dbo].[users] u INNER JOIN [dbo].[typeuser] t ON u.typeuser_id = t.id WHERE t.description = \'Scribe\'';
+      const scribeCountResult = await sequelize.query(scribeCountQuery, {
+        type: Sequelize.QueryTypes.SELECT,
+      });
+      stats.totalScribes = scribeCountResult[0]?.count || 0;
+
+      const employeeCountQuery = 'SELECT COUNT(*) as count FROM [dbo].[users] u INNER JOIN [dbo].[typeuser] t ON u.typeuser_id = t.id WHERE t.description = \'Employee\'';
+      const employeeCountResult = await sequelize.query(employeeCountQuery, {
+        type: Sequelize.QueryTypes.SELECT,
+      });
+      stats.totalEmployees = employeeCountResult[0]?.count || 0;
+
+      const recentLoginsQuery = `
+        SELECT TOP 5 u.name, u.email, u.xr_id, t.description as userType, u.last_login
+        FROM [dbo].[users] u
+        LEFT JOIN [dbo].[typeuser] t ON u.typeuser_id = t.id
+        WHERE u.last_login IS NOT NULL
+        ORDER BY u.last_login DESC
+      `;
+      const recentLoginsResult = await sequelize.query(recentLoginsQuery, {
+        type: Sequelize.QueryTypes.SELECT,
+      });
+      stats.recentLogins = recentLoginsResult.map(row => ({
+        name: row.name,
+        email: row.email,
+        xrId: row.xr_id,
+        userType: row.userType,
+        lastLogin: row.last_login,
+      }));
+    } catch (dbErr) {
+      console.warn('[PLATFORM] Database query error:', dbErr.message);
+    }
+
+    return res.json({ ok: true, stats });
+  } catch (err) {
+    console.error('[PLATFORM] Stats error:', err);
+    return res.status(500).json({ ok: false, message: 'Internal server error' });
+  }
+});
+
+app.post('/api/platform/create-user', requireSuperAdmin, async (req, res) => {
+  try {
+    const { name, email, xrId, userType, status, rights } = req.body;
+
+    if (!name || !email || !xrId || !userType || !status || !rights) {
+      return res.status(400).json({ ok: false, message: 'All fields are required' });
+    }
+
+    const typeUserQuery = 'SELECT id FROM [dbo].[typeuser] WHERE description = :userType';
+    const typeUserResult = await sequelize.query(typeUserQuery, {
+      replacements: { userType },
+      type: Sequelize.QueryTypes.SELECT,
+    });
+
+    if (!typeUserResult || typeUserResult.length === 0) {
+      return res.status(400).json({ ok: false, message: 'Invalid user type' });
+    }
+    const typeUserId = typeUserResult[0].id;
+
+    const statusUserQuery = 'SELECT id FROM [dbo].[statususer] WHERE description = :status';
+    const statusUserResult = await sequelize.query(statusUserQuery, {
+      replacements: { status },
+      type: Sequelize.QueryTypes.SELECT,
+    });
+
+    if (!statusUserResult || statusUserResult.length === 0) {
+      return res.status(400).json({ ok: false, message: 'Invalid status' });
+    }
+    const statusUserId = statusUserResult[0].id;
+
+    const rightsUserQuery = 'SELECT id FROM [dbo].[rightsuser] WHERE description = :rights';
+    const rightsUserResult = await sequelize.query(rightsUserQuery, {
+      replacements: { rights },
+      type: Sequelize.QueryTypes.SELECT,
+    });
+
+    if (!rightsUserResult || rightsUserResult.length === 0) {
+      return res.status(400).json({ ok: false, message: 'Invalid rights level' });
+    }
+    const rightsUserId = rightsUserResult[0].id;
+
+    const insertQuery = `
+      INSERT INTO [dbo].[users] (name, email, xr_id, typeuser_id, statususer_id, rightsuser_id, created_at)
+      VALUES (:name, :email, :xrId, :typeUserId, :statusUserId, :rightsUserId, GETDATE())
+    `;
+
+    await sequelize.query(insertQuery, {
+      replacements: { name, email, xrId, typeUserId, statusUserId, rightsUserId },
+      type: Sequelize.QueryTypes.INSERT,
+    });
+
+    console.log('[PLATFORM] User created:', { name, email, xrId, userType, status, rights });
+    return res.json({ ok: true, message: 'User created successfully' });
+  } catch (err) {
+    console.error('[PLATFORM] Create user error:', err);
+    if (err.message && err.message.includes('Violation of UNIQUE KEY')) {
+      return res.status(400).json({ ok: false, message: 'User with this email or XR ID already exists' });
+    }
+    return res.status(500).json({ ok: false, message: 'Internal server error' });
+  }
+});
+
+app.post('/api/platform/assign-user', requireSuperAdmin, async (req, res) => {
+  try {
+    const { userId, providerId, scribeId, level } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ ok: false, message: 'User ID is required' });
+    }
+
+    const checkQuery = 'SELECT * FROM [dbo].[assignusers] WHERE user_id = :userId';
+    const existing = await sequelize.query(checkQuery, {
+      replacements: { userId },
+      type: Sequelize.QueryTypes.SELECT,
+    });
+
+    if (existing && existing.length > 0) {
+      const updateQuery = `
+        UPDATE [dbo].[assignusers]
+        SET provider_id = :providerId, scribe_id = :scribeId, level = :level, updated_at = GETDATE()
+        WHERE user_id = :userId
+      `;
+      await sequelize.query(updateQuery, {
+        replacements: { userId, providerId: providerId || null, scribeId: scribeId || null, level: level || null },
+        type: Sequelize.QueryTypes.UPDATE,
+      });
+    } else {
+      const insertQuery = `
+        INSERT INTO [dbo].[assignusers] (user_id, provider_id, scribe_id, level, created_at)
+        VALUES (:userId, :providerId, :scribeId, :level, GETDATE())
+      `;
+      await sequelize.query(insertQuery, {
+        replacements: { userId, providerId: providerId || null, scribeId: scribeId || null, level: level || null },
+        type: Sequelize.QueryTypes.INSERT,
+      });
+    }
+
+    console.log('[PLATFORM] User assignment updated:', { userId, providerId, scribeId, level });
+    return res.json({ ok: true, message: 'Assignment saved successfully' });
+  } catch (err) {
+    console.error('[PLATFORM] Assign user error:', err);
+    return res.status(500).json({ ok: false, message: 'Internal server error' });
+  }
+});
+
+app.get('/api/platform/users', requireSuperAdmin, async (req, res) => {
+  try {
+    const usersQuery = `
+      SELECT
+        u.id, u.name, u.email, u.xr_id,
+        t.description as userType,
+        s.description as status,
+        r.description as rights,
+        a.provider_id, a.scribe_id, a.level
+      FROM [dbo].[users] u
+      LEFT JOIN [dbo].[typeuser] t ON u.typeuser_id = t.id
+      LEFT JOIN [dbo].[statususer] s ON u.statususer_id = s.id
+      LEFT JOIN [dbo].[rightsuser] r ON u.rightsuser_id = r.id
+      LEFT JOIN [dbo].[assignusers] a ON u.id = a.user_id
+      ORDER BY u.created_at DESC
+    `;
+
+    const users = await sequelize.query(usersQuery, {
+      type: Sequelize.QueryTypes.SELECT,
+    });
+
+    return res.json({ ok: true, users });
+  } catch (err) {
+    console.error('[PLATFORM] Get users error:', err);
+    return res.status(500).json({ ok: false, message: 'Internal server error' });
+  }
+});
+
+app.get('/api/platform/lookup-options', requireSuperAdmin, async (req, res) => {
+  try {
+    const userTypesQuery = 'SELECT id, description FROM [dbo].[typeuser] ORDER BY description';
+    const statusesQuery = 'SELECT id, description FROM [dbo].[statususer] ORDER BY description';
+    const rightsQuery = 'SELECT id, description FROM [dbo].[rightsuser] ORDER BY description';
+
+    const [userTypes, statuses, rights] = await Promise.all([
+      sequelize.query(userTypesQuery, { type: Sequelize.QueryTypes.SELECT }),
+      sequelize.query(statusesQuery, { type: Sequelize.QueryTypes.SELECT }),
+      sequelize.query(rightsQuery, { type: Sequelize.QueryTypes.SELECT }),
+    ]);
+
+    return res.json({
+      ok: true,
+      options: {
+        userTypes: userTypes.map(t => t.description),
+        statuses: statuses.map(s => s.description),
+        rights: rights.map(r => r.description),
+      },
+    });
+  } catch (err) {
+    console.error('[PLATFORM] Get lookup options error:', err);
+    return res.status(500).json({ ok: false, message: 'Internal server error' });
+  }
+});
+
 // ---- Desktop HTTP telemetry (beginner path) ----
 app.post('/desktop-telemetry', (req, res) => {
   try {
