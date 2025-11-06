@@ -1,0 +1,159 @@
+/* =========================
+   GLOBAL APP STYLES (yours)
+   ========================= */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #1a202c;
+  margin: 0;
+  padding: 0;
+  color: #fff;
+}
+
+/* Header / Status */
+h1 {
+  margin-top: 0;
+  text-align: center;
+  font-size: 28px;
+  color: #c7d2fe;
+}
+
+#status { font-weight: bold; padding: 4px 12px; border-radius: 8px; }
+.connecting, .bg-yellow-500 { background-color: #f1c40f !important; color: #fff !important; }
+.connected, .bg-green-500  { background-color: #22c55e !important; color: #fff !important; }
+.disconnected, .bg-red-600 { background-color: #e74c3c !important; color: #fff !important; }
+
+/* Inputs */
+input, textarea {
+  background: #23272f;
+  color: #fff;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  padding: 8px;
+}
+input:focus, textarea:focus { outline: none; border-color: #6366f1; }
+input::placeholder, textarea::placeholder { color: #94a3b8; }
+
+/* Device List */
+ul#deviceList { padding-left: 18px; }
+
+/* Messages */
+.message-block { max-height: 300px; overflow-y: auto; background: #18181b; padding: 10px; border: 1px solid #374151; border-radius: 8px; }
+.message { border-bottom: 1px solid #374151; padding: 8px; margin-bottom: 5px; background: #23272f; border-radius: 6px; }
+.message.urgent { border-left: 5px solid #dc2626; background-color: #fdecea; color: #a71b1b; }
+.message.normal { border-left: 5px solid #6366f1; }
+.message-header { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+.sender-info { font-weight: bold; color: #818cf8; }
+.xr-id { margin-left: 10px; font-size: 12px; color: #7dd3fc; }
+.message-content { font-size: 15px; color: #f1f5f9; }
+.urgent-badge { background-color: #dc2626; color: white; font-size: 11px; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 5px; }
+
+/* Recent Messages */
+.recent-message { padding: 6px; margin-bottom: 5px; background: #23272f; border-radius: 6px; color: #f1f5f9; }
+.recent-message.urgent { background-color: #fdecea; border-left: 4px solid #dc2626; color: #a71b1b; }
+.recent-message-header { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 3px; }
+.system-message { background-color: #fef5cb; color: #7c4700; padding: 8px; border-left: 4px solid #f1c40f; margin: 5px 0; border-radius: 4px; font-style: italic; }
+
+/* Video */
+#xrVideo, #remoteVideo {
+  display: block; margin: 0; max-height: 100%; width: 100%; object-fit: contain; background: #000;
+  border: 2px solid #23272f; border-radius: 6px;
+}
+#videoOverlay { background: rgba(0,0,0,0.7); z-index: 20; font-size: 2rem; font-weight: bold; }
+#muteBadge { z-index: 30; font-weight: bold; display: none; }
+.bg-overlay { background: rgba(0,0,0,0.7); }
+
+/* Buttons */
+button { transition: background-color 0.3s; font-weight: 500; }
+#sendButton, #clearMessagesBtn, #openEmulator { min-width: 100px; margin-left: 6px; }
+#sendButton:active, #clearMessagesBtn:active, #openEmulator:active { opacity: 0.8; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .flex, .flex-col, .flex-1 { flex-direction: column !important; }
+  .w-2\/3, .w-1\/3 { width: 100% !important; }
+  .h-full, .h-auto { height: auto !important; min-height: 200px; }
+  #xrVideo, #remoteVideo { min-height: 160px; height: 200px; max-height: 300px; }
+  .max-h-32, .max-h-48, .max-h-24, .max-h-20 { max-height: 120px !important; }
+  .space-y-6, .space-y-4 { gap: 1rem !important; }
+}
+@media (max-width: 600px) {
+  h1 { font-size: 20px; }
+  #status { font-size: 12px; padding: 2px 6px; }
+  .container { padding: 8px; }
+  .px-3, .px-4, .px-6 { padding-left: 8px !important; padding-right: 8px !important; }
+  .py-3, .py-4, .py-6 { padding-top: 8px !important; padding-bottom: 8px !important; }
+  .rounded, .rounded-full, .rounded-lg { border-radius: 4px !important; }
+  #xrVideo, #remoteVideo { height: 140px !important; }
+  textarea { height: 60px !important; }
+}
+@media (max-width: 400px) {
+  .recent-message-header, .message-header { font-size: 11px !important; }
+  .sender-info, .xr-id { font-size: 10px !important; }
+  .message-content, .recent-message-content { font-size: 12px !important; }
+}
+
+/* =========================
+   SCRIBE PANEL STYLES
+   ========================= */
+
+/* Scrollbars for inner scroll areas only */
+.scribe-scroll::-webkit-scrollbar { width: 10px; }
+.scribe-scroll::-webkit-scrollbar-track { background: #0b0f19; border-radius: 10px; }
+.scribe-scroll::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 10px; border: 2px solid #0b0f19; }
+.scribe-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+.scribe-scroll { scrollbar-width: thin; scrollbar-color: #6b7280 #0b0f19; }
+
+/* Transcript cards */
+.scribe-card{ position:relative; background:#1f2937; padding:12px; border-radius:10px; margin-bottom:10px; transition:background .15s ease; cursor:pointer }
+.scribe-card:hover{ background:#222b3a }
+.scribe-card-active{ outline:2px solid #2563eb; background:#243041 }
+.scribe-delete{ position:absolute; top:8px; right:8px; color:#ef4444; font-size:16px; line-height:1; background:transparent; border:0; cursor:pointer }
+.scribe-delete:hover{ transform:scale(1.1) }
+
+/* SOAP editor container + sections */
+.scribe-soap-scroll{ height:100%; overflow-y:auto; padding:12px }
+.scribe-section{ background:#1f2937; padding:12px; border-radius:10px; margin-bottom:10px }
+.scribe-section-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px }
+.scribe-section h3{ font-size:14px; font-weight:600; margin:0; color:#fff }
+.scribe-section .scribe-section-meta{ font-size:13px; color:#a7f3d0; font-weight:600; margin-left:12px }
+.scribe-textarea{ width:100%; background:#0f172a; color:#fff; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,.06); resize:none; min-height:60px; outline:none }
+
+/* Sticky actions in the SOAP area */
+.scribe-soap-actions{
+  position:sticky; bottom:0; z-index:2; padding:10px; display:flex; gap:8px; justify-content:flex-end;
+  background:linear-gradient(180deg,rgba(11,15,25,0),rgba(11,15,25,.85) 30%,rgba(11,15,25,1) 60%);
+  margin:-12px; margin-top:6px; padding-top:16px;
+}
+
+/* Buttons */
+.scribe-btn{ padding:10px 18px; border-radius:10px; border:0; color:#fff; cursor:pointer; min-width:120px; font-weight:600 }
+.scribe-btn-primary{ background:#16a34a }
+.scribe-btn-primary:hover{ background:#15803d }
+.scribe-btn-ghost{ background:#374151 }
+.scribe-btn-ghost:hover{ background:#4b5563 }
+
+/* Add EHR: force a disabled, red, non-interactive style */
+.scribe-add-ehr-disabled{ background:#7f1d1d; color:#fff; opacity:0.95; cursor:not-allowed }
+#_scribe_add_ehr.scribe-btn,
+#_scribe_add_ehr.scribe-btn:disabled,
+.scribe-btn.scribe-add-ehr-disabled,
+.scribe-btn:disabled {
+  background: #7f1d1d !important;
+  color: #fff !important;
+  opacity: 0.95 !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+#_scribe_add_ehr.scribe-btn:hover,
+.scribe-btn:disabled:hover {
+  background: #7f1d1d !important;
+}
+
+/* Global "Total Edits" badge on the first SOAP heading */
+._scribe_total_edits{ font-size:13px; color:#10b981; font-weight:700; margin-left:auto }
+.scribe-heading-flex{ display:flex; align-items:center; gap:.75rem }
+.scribe-heading-flex > ._scribe_total_edits{ margin-left:auto }
+
+/* Persistent space at end of transcript */
+#liveTranscript{ padding-bottom:1rem; }
+#liveTranscript .scribe-card:last-child{ margin-bottom:1rem; }
